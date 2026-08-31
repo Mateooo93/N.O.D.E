@@ -7,8 +7,8 @@ html, body {
     width: 100%;
     height: 100%;
     background: #050505;
-    color: #d8d8d8;
-    font-family: "Courier New", monospace;
+    color: #cdd3d8;
+    font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 body {
@@ -23,15 +23,34 @@ body {
     cursor: text;
 }
 
+#terminal::-webkit-scrollbar {
+    width: 10px;
+}
+
+#terminal::-webkit-scrollbar-thumb {
+    background: #1e2022;
+    border-radius: 5px;
+}
+
+#terminal::-webkit-scrollbar-track {
+    background: transparent;
+}
+
 #output {
     white-space: pre-wrap;
-    line-height: 1.5;
-    font-size: 16px;
+    line-height: 1.6;
+    font-size: 15px;
 }
 
 #output > div:empty {
     min-height: 1.5em;
 }
+
+#output .node   { color: #7fc6d6; }
+#output .prompt { color: #6dbb84; }
+#output .error  { color: #d06969; }
+#output .warn   { color: #d4a94e; }
+#output .header { color: #e8edf2; }
 
 #input-line {
     display: flex;
@@ -41,6 +60,7 @@ body {
 
 #prompt {
     margin-right: 10px;
+    color: #6dbb84;
 }
 
 #command {
@@ -50,7 +70,8 @@ body {
     padding: 0;
     margin: 0;
     background: transparent;
-    color: #d8d8d8;
-    font-family: "Courier New", monospace;
+    color: #cdd3d8;
+    caret-color: #cdd3d8;
+    font-family: inherit;
     font-size: 16px;
 }

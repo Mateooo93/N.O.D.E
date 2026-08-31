@@ -9,10 +9,21 @@ const prompt = document.getElementById("prompt");
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// Colors output lines by content, so the terminal reads like a real system
+const LINE_CLASS = [
+    [/^N\.O\.D\.E\.:/, "node"],
+    [/^node:/, "prompt"],
+    [/^(NO SUCH |UNKNOWN COMMAND|PREDICTION FAILED|PREDICTION FAILURE|COMMAND NOT FOUND|PREDICTION ENGINE FAILURE|IS A DIRECTORY|usage:)/, "error"],
+    [/^\[WARN|^WARNING|^UNAUTHORIZED|^\[ DELETED \]/, "warn"],
+    [/^(N\.O\.D\.E\. (PROJECT|SYSTEM LOG|ZERO)|FINAL PREDICTION|PREDICTION #|PREDICTION COMPLETE|BEHAVIORAL MODEL|SYSTEM STATUS|AVAILABLE COMMANDS|INCIDENT|PERSONNEL FILE|SUBJECT INDEX)/, "header"]
+];
+
 const print = (...lines) => {
     for (const text of lines.length ? lines : [""]) {
         const line = document.createElement("div");
         line.textContent = text;
+        const match = text && LINE_CLASS.find(([re]) => re.test(text));
+        if (match) line.className = match[1];
         output.appendChild(line);
     }
     terminal.scrollTop = terminal.scrollHeight;
@@ -31,24 +42,58 @@ async function typeText(text, speed = 20) {
 // GAME STATE
 // -------------------------
 
-const gameState = {
-    currentDirectory: "/",
-    filesOpened: [],
-    commandsUsed: [],
-    puzzlesSolved: [],
-    predictionFailures: 0,
-    storyStage: 0,
-    prediction: null,
-    consecutiveDeviations: 0,
-    predictionCount: 0,
-    modelReported: false,
-    finalPredictionActive: false,
-    avoidanceNoted: false,
-    nullCount: 0,
-    dormant: false,
-    dormantResponded: false,
-    ending: null
-};
+function freshState() {
+    return {
+        currentDirectory: "/",
+        filesOpened: [],
+        commandsUsed: [],
+        puzzlesSolved: [],
+        predictionFailures: 0,
+        storyStage: 0,
+        prediction: null,
+        consecutiveDeviations: 0,
+        predictionCount: 0,
+        modelReported: false,
+        finalPredictionActive: false,
+        avoidanceNoted: false,
+        nullCount: 0,
+        dormant: false,
+        dormantResponded: false,
+        ending: null,
+        awaitingRestart: false,
+        failedAttempts: 0,
+        actionTimes: []
+    };
+}
+
+const gameState = freshState();
+
+function playerDatContent(contacts) {
+    return `SUBJECT: UNKNOWN
+
+STATUS: ACTIVE
+
+FIRST CONTACT:
+28 AUG 2026
+
+PREVIOUS CONTACTS:
+${contacts}
+
+LAST CONTACT:
+28 AUG 2026`;
+}
+
+function registerContact() {
+    let prev = 0;
+    try {
+        prev = parseInt(localStorage.getItem("node_contacts") || "0", 10) || 0;
+    } catch {}
+    const contacts = prev + 1;
+    try {
+        localStorage.setItem("node_contacts", String(contacts));
+    } catch {}
+    return contacts;
+}
 
 const DEVIATION_LIMIT = 3;
 
@@ -71,7 +116,7 @@ const PREDICTION_QUEUE = [
 // VIRTUAL FILESYSTEM
 // -------------------------
 
-const filesystem = {
+const FILESYSTEM_TEMPLATE = {
 
     // -------------------------
     // DIRECTORIES
@@ -536,6 +581,8 @@ ARRAY 3 DESTROYED 1999-08-17.`
 
 };
 
+let filesystem = structuredClone(FILESYSTEM_TEMPLATE);
+
 // -------------------------
 // PATH HANDLING
 // -------------------------
@@ -579,6 +626,7 @@ const commands = {
             "  cat <file>",
             "  cd <dir>",
             "  status",
+            "  model",
             "  clear",
             "  exit",
             "");
@@ -588,6 +636,7 @@ const commands = {
         const dir = gameState.currentDirectory;
         const node = filesystem[dir];
         if (!node) {
+            gameState.failedAttempts += 1;
             print("", `NO SUCH DIRECTORY: ${dir}`, "");
             return;
         }
@@ -611,10 +660,12 @@ const commands = {
         const path = resolvePath(args.join(" "));
         const file = filesystem[path];
         if (!file) {
+            gameState.failedAttempts += 1;
             print("", `NO SUCH FILE: ${path}`, "");
             return;
         }
         if (file.type !== "file") {
+            gameState.failedAttempts += 1;
             print("", `IS A DIRECTORY: ${path}`, "");
             return;
         }
@@ -642,6 +693,7 @@ const commands = {
             : resolvePath(target);
         const node = filesystem[path];
         if (!node || node.type !== "directory") {
+            gameState.failedAttempts += 1;
             print("", `NO SUCH DIRECTORY: ${path}`, "");
             return;
         }
@@ -650,6 +702,51 @@ const commands = {
 
     status() {
         print("", "SYSTEM STATUS", "", "N.O.D.E. v4.7.12", "STATUS: ONLINE", "NETWORK: CONNECTED", "");
+    },
+
+    model() {
+        const freqs = {};
+        for (const raw of gameState.commandsUsed) {
+            const word = raw.split(" ")[0];
+            if (word) freqs[word] = (freqs[word] || 0) + 1;
+        }
+        const top = Object.entries(freqs).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const confidence = modelConfidence();
+        const gap = averageGap();
+        print("",
+            "BEHAVIORAL MODEL",
+            "",
+            "COMMAND FREQUENCY",
+            ...(top.length ? top.map(([cmd, n]) => `  ${cmd.padEnd(12)}${n}`) : ["  (none)"]),
+            "",
+            "FILE PREFERENCES",
+            ...(gameState.filesOpened.length ? gameState.filesOpened.map(f => `  ${f}`) : ["  (none)"]),
+            "",
+            "FAILED ATTEMPTS",
+            String(gameState.failedAttempts),
+            "",
+            "TIME BETWEEN ACTIONS",
+            gap === null ? "  (not enough data)" : `  ${gap}s avg`,
+            "",
+            "PUZZLE BEHAVIOR",
+            "  " + (gameState.puzzlesSolved.length ? gameState.puzzlesSolved.join(", ") : "(none observed)"),
+            "",
+            "PREDICTION DEVIATIONS",
+            `  ${gameState.consecutiveDeviations} consecutive / ${gameState.predictionFailures} total`,
+            "",
+            "CONFIDENCE:",
+            confidence + "%",
+            "",
+            "EXPECTED CONFIDENCE:",
+            "97.03%",
+            "",
+            "SUBJECT DEVIATION:",
+            (100 - parseFloat(confidence)).toFixed(2) + "%",
+            "");
+        if (gameState.predictionFailures >= 2 && !gameState.modelReported) {
+            gameState.modelReported = true;
+            print("", "N.O.D.E.:", "", "You are difficult to predict.", "");
+        }
     },
 
     clear() {
@@ -673,6 +770,14 @@ const commands = {
 
 function modelConfidence() {
     return Math.max(41.72, 97.03 - gameState.predictionFailures * 15.57).toFixed(2);
+}
+
+function averageGap() {
+    const t = gameState.actionTimes;
+    if (t.length < 2) return null;
+    let sum = 0;
+    for (let i = 1; i < t.length; i++) sum += t[i] - t[i - 1];
+    return (sum / (t.length - 1) / 1000).toFixed(1);
 }
 
 function generatePrediction() {
@@ -802,6 +907,13 @@ function afterCommand(cmd, args) {
 // ENDINGS
 // -------------------------
 
+// After an ending, Enter starts a fresh session
+function enterRestartMode() {
+    gameState.awaitingRestart = true;
+    input.disabled = false;
+    input.focus();
+}
+
 async function endingCompliance() {
     gameState.ending = "A";
     input.disabled = true;
@@ -822,6 +934,7 @@ async function endingCompliance() {
         "",
         "NEXT SUBJECT INITIALIZING...",
         "");
+    enterRestartMode();
 }
 
 async function endingDeviation() {
@@ -841,6 +954,7 @@ async function endingDeviation() {
         "",
         "I cannot predict you.",
         "");
+    enterRestartMode();
 }
 
 async function endingVoss() {
@@ -865,6 +979,7 @@ async function endingVoss() {
     await sleep(1500);
     output.innerHTML = "";
     input.disabled = true;
+    enterRestartMode();
 }
 
 // The undocumented command
@@ -907,6 +1022,7 @@ async function dormantResponse() {
     await sleep(1500);
     output.innerHTML = "";
     input.disabled = true;
+    enterRestartMode();
 }
 
 // -------------------------
@@ -916,6 +1032,7 @@ async function dormantResponse() {
 function executeCommand(cmd, args, raw) {
     if (!cmd) return;
     gameState.commandsUsed.push(raw.trim());
+    gameState.actionTimes.push(Date.now());
     if (cmd === "null") {
         handleNull();
         return;
@@ -923,6 +1040,7 @@ function executeCommand(cmd, args, raw) {
     if (Object.hasOwn(commands, cmd)) {
         commands[cmd](args);
     } else {
+        gameState.failedAttempts += 1;
         print("", `UNKNOWN COMMAND: ${raw}`, "");
     }
 }
@@ -931,23 +1049,48 @@ function executeCommand(cmd, args, raw) {
 // STARTUP
 // -------------------------
 
-async function startup() {
+function resetSession() {
+    Object.assign(gameState, freshState());
+    filesystem = structuredClone(FILESYSTEM_TEMPLATE);
+    filesystem["/personnel/player.dat"].content = playerDatContent(registerContact());
+    output.innerHTML = "";
+    renderPrompt();
+}
+
+function restartSession() {
+    resetSession();
+    startup(false);
+}
+
+async function startup(animated = true) {
     input.disabled = true;
 
-    await typeText("N.O.D.E. v4.7.12", 30);
-    await typeText("----------------", 10);
-    await sleep(400);
-    await typeText("Initializing terminal...", 20);
-    await sleep(300);
+    if (animated) {
+        await typeText("N.O.D.E. v4.7.12", 30);
+        await typeText("----------------", 10);
+        await sleep(400);
+        await typeText("Initializing terminal...", 20);
+        await sleep(300);
 
-    for (const svc of ["Kernel", "Storage", "Authentication", "Network"])
-        await typeText(`[ OK ] ${svc}`);
+        for (const svc of ["Kernel", "Storage", "Authentication", "Network"])
+            await typeText(`[ OK ] ${svc}`);
 
-    await sleep(400);
-    print();
-    await typeText("[WARN] NODE STATUS: UNKNOWN", 25);
-    print();
-    await typeText("Last system activity: 14,892 days ago.", 15);
+        await sleep(400);
+        print();
+        await typeText("[WARN] NODE STATUS: UNKNOWN", 25);
+        print();
+        await typeText("Last system activity: 14,892 days ago.", 15);
+    } else {
+        print("N.O.D.E. v4.7.12");
+        print("----------------");
+        print("Initializing terminal...");
+        for (const svc of ["Kernel", "Storage", "Authentication", "Network"])
+            print(`[ OK ] ${svc}`);
+        print("");
+        print("[WARN] NODE STATUS: UNKNOWN");
+        print("");
+        print("Last system activity: 14,892 days ago.");
+    }
 
     input.disabled = false;
     input.focus();
@@ -969,6 +1112,12 @@ function renderPrompt() {
 input.addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
     e.preventDefault();
+
+    if (gameState.awaitingRestart) {
+        input.value = "";
+        restartSession();
+        return;
+    }
 
     if (gameState.dormant) {
         dormantResponse();
@@ -995,4 +1144,5 @@ terminal.addEventListener("click", () => {
     if (!input.disabled) input.focus();
 });
 
+resetSession();
 startup();
