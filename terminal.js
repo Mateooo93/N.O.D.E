@@ -15,7 +15,7 @@ const LINE_CLASS = [
     [/^node:/, "prompt"],
     [/^(NO SUCH |UNKNOWN COMMAND|PREDICTION FAILED|PREDICTION FAILURE|COMMAND NOT FOUND|PREDICTION ENGINE FAILURE|IS A DIRECTORY|usage:)/, "error"],
     [/^\[WARN|^WARNING|^UNAUTHORIZED|^\[ DELETED \]/, "warn"],
-    [/^(N\.O\.D\.E\. (PROJECT|SYSTEM LOG|ZERO)|FINAL PREDICTION|PREDICTION #|PREDICTION COMPLETE|BEHAVIORAL MODEL|SYSTEM STATUS|AVAILABLE COMMANDS|INCIDENT|PERSONNEL FILE|SUBJECT INDEX)/, "header"]
+    [/^(N\.O\.D\.E\. (PROJECT|SYSTEM LOG|ZERO)|FINAL PREDICTION|PREDICTION #|PREDICTION COMPLETE|BEHAVIORAL MODEL|SYSTEM STATUS|AVAILABLE COMMANDS|INCIDENT|PERSONNEL FILE|SUBJECT INDEX|USER WILL)/, "header"]
 ];
 
 const print = (...lines) => {
@@ -108,9 +108,36 @@ const PREDICTION_QUEUE = [
     "/personnel/player.dat",
     "/restricted/subjects.log",
     "/system/origin/origin.log",
-    "/system/research/2025.log",
-    "/personnel/voss_final.txt"
+    "/system/research/2025.log"
 ];
+
+// -------------------------
+// IDLE MONITOR
+// -------------------------
+
+const IDLE_SEQUENCE = [
+    { after: 45000, line: "I am still here." },
+    { after: 60000, line: "It is easier if you keep typing." },
+    { after: 75000, line: "I can wait. So can you." }
+];
+
+let idleTimer = null;
+let idleStage = 0;
+
+function armIdleTimer() {
+    clearTimeout(idleTimer);
+    if (gameState.ending || gameState.dormant || gameState.awaitingRestart) return;
+    if (idleStage >= IDLE_SEQUENCE.length) return;
+    idleTimer = setTimeout(idleLine, IDLE_SEQUENCE[idleStage].after);
+}
+
+function idleLine() {
+    if (gameState.ending || gameState.dormant || gameState.awaitingRestart || input.disabled) return;
+    const stage = IDLE_SEQUENCE[idleStage];
+    print("", "N.O.D.E.:", "", stage.line, "");
+    idleStage += 1;
+    armIdleTimer();
+}
 
 // -------------------------
 // VIRTUAL FILESYSTEM
@@ -781,22 +808,41 @@ function averageGap() {
 }
 
 function generatePrediction() {
-    const target = PREDICTION_QUEUE.find(
+    const nextOpen = PREDICTION_QUEUE.find(
         path => !gameState.filesOpened.includes(path.split("/").pop())
     );
-    if (!target) {
-        gameState.prediction = null;
-        return;
+
+    let kind;
+    let target;
+    if (nextOpen) {
+        kind = "open";
+        target = nextOpen;
+    } else {
+        const POST_STORY = [
+            { kind: "type", target: "status" },
+            { kind: "cd", target: "/system" },
+            { kind: "type", target: "help" },
+            { kind: "type", target: "model" },
+            { kind: "cd", target: "/" }
+        ];
+        const pick = POST_STORY[gameState.predictionCount % POST_STORY.length];
+        kind = pick.kind;
+        target = pick.target;
     }
+
     gameState.predictionCount += 1;
     const number = 48192 + (gameState.predictionCount - 1);
     const name = `prediction_${number}.txt`;
+
+    const verb = kind === "open" ? "OPEN" : kind === "type" ? "TYPE" : "ENTER DIRECTORY";
+    const targetLine = kind === "type" ? `> ${target}` : target;
+
     const content =
 `PREDICTION #${number}
 
-USER WILL OPEN:
+USER WILL ${verb}:
 
-${target}
+${targetLine}
 
 CONFIDENCE:
 ${modelConfidence()}%`;
@@ -805,13 +851,33 @@ ${modelConfidence()}%`;
         type: "file",
         content
     };
-    gameState.prediction = { file: target };
+    gameState.prediction = { kind, target };
 }
 
-function resolvePrediction(openedPath) {
-    if (!gameState.prediction) return;
+function actionSignature(cmd, args) {
+    if (cmd === "cat" && args.length) {
+        const path = resolvePath(args.join(" "));
+        const node = filesystem[path];
+        if (node && node.type === "file") return { kind: "open", target: path };
+        return null;
+    }
+    if (cmd === "cd" && args.length) {
+        const path = resolvePath(args.join(" "));
+        const node = filesystem[path];
+        if (node && node.type === "directory") return { kind: "cd", target: path };
+        return null;
+    }
+    if (["ls", "status", "help", "model", "clear", "exit"].includes(cmd)) {
+        return { kind: "type", target: cmd };
+    }
+    return null;
+}
 
-    if (openedPath === gameState.prediction.file) {
+function resolvePrediction(signature) {
+    const pred = gameState.prediction;
+    if (!pred || signature.kind !== pred.kind) return;
+
+    if (signature.target === pred.target) {
         gameState.consecutiveDeviations = 0;
     } else {
         gameState.predictionFailures += 1;
@@ -858,13 +924,10 @@ function afterCommand(cmd, args) {
     // State before this command, for the avoidance check below
     const finalWasActive = gameState.finalPredictionActive;
 
-    // A cat is the only command that resolves a pending prediction
-    if (cmd === "cat" && args.length && gameState.prediction) {
-        const path = resolvePath(args.join(" "));
-        const file = filesystem[path];
-        if (file && file.type === "file") {
-            resolvePrediction(path);
-        }
+    // A matching action resolves the pending prediction
+    if (gameState.prediction) {
+        const signature = actionSignature(cmd, args);
+        if (signature) resolvePrediction(signature);
     }
 
     // An ending may have just fired
@@ -1050,6 +1113,8 @@ function executeCommand(cmd, args, raw) {
 // -------------------------
 
 function resetSession() {
+    clearTimeout(idleTimer);
+    idleStage = 0;
     Object.assign(gameState, freshState());
     filesystem = structuredClone(FILESYSTEM_TEMPLATE);
     filesystem["/personnel/player.dat"].content = playerDatContent(registerContact());
@@ -1095,6 +1160,7 @@ async function startup(animated = true) {
     input.disabled = false;
     input.focus();
     renderPrompt();
+    armIdleTimer();
 }
 
 // -------------------------
@@ -1137,6 +1203,7 @@ input.addEventListener("keydown", e => {
     afterCommand(cmd, args);
     renderPrompt();
     input.focus();
+    armIdleTimer();
 });
 
 // Clicking terminal focuses input
