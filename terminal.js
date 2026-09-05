@@ -95,10 +95,6 @@ function registerContact() {
     return contacts;
 }
 
-const DEVIATION_LIMIT = 3;
-
-const CORE_FILES = ["README.txt", "incident_01.txt", "voss.txt", "player.dat"];
-
 const MILESTONES = ["README.txt", "incident_01.txt", "voss.txt", "player.dat", "origin.log", "voss_final.txt"];
 
 const PREDICTION_QUEUE = [
@@ -537,9 +533,10 @@ Prediction engine: ACTIVE.
 Behavioral trials resumed.
 
 Subject 0001's final message remains
-in the archive.
+in /personnel/voss_final.txt.
 
-It has never been decrypted.`
+It has never been decrypted.
+The cipher is a simple rotation.`
     },
 
 
@@ -641,6 +638,39 @@ function parentDirectory(path) {
 }
 
 // -------------------------
+// PUZZLES
+// -------------------------
+
+const PUZZLE_STAGES = [
+    {
+        id: "records",
+        done: () => gameState.filesOpened.includes("voss.txt") && gameState.filesOpened.includes("subjects.log"),
+        hint: "Two names in the records share a date. Compare /personnel and /restricted."
+    },
+    {
+        id: "hidden",
+        done: () => gameState.filesOpened.includes("origin.log") || gameState.filesOpened.includes("2025.log"),
+        hint: "Not every folder shows in ls. Some researchers kept their own under /system, and the predictions name the paths."
+    },
+    {
+        id: "message",
+        done: () => gameState.puzzlesSolved.includes("voss_message"),
+        hint: "One message is still locked. The 2025 research log says where it is. It is a rotation cipher, so try the decrypt command."
+    }
+];
+
+function rot13(s) {
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i);
+        if (c >= 97 && c <= 122) out += String.fromCharCode(((c - 97 + 13) % 26) + 97);
+        else if (c >= 65 && c <= 90) out += String.fromCharCode(((c - 65 + 13) % 26) + 65);
+        else out += s[i];
+    }
+    return out;
+}
+
+// -------------------------
 // COMMANDS
 // -------------------------
 
@@ -654,6 +684,7 @@ const commands = {
             "  cd <dir>",
             "  status",
             "  model",
+            "  hint",
             "  clear",
             "  exit",
             "");
@@ -699,14 +730,9 @@ const commands = {
         const name = path.split("/").pop();
         if (!gameState.filesOpened.includes(name)) {
             gameState.filesOpened.push(name);
-        }
-        if (path === "/personnel/voss_final.txt" && !gameState.puzzlesSolved.includes("voss_message")) {
-            gameState.puzzlesSolved.push("voss_message");
+            generatePrediction();
         }
         print("", ...file.content.split("\n"), "");
-        if (path === "/personnel/voss_final.txt" && !gameState.ending) {
-            endingVoss();
-        }
     },
 
     cd(args) {
@@ -776,6 +802,33 @@ const commands = {
         }
     },
 
+    decrypt(args) {
+        if (!args.length) {
+            print("", "usage: decrypt <file>", "");
+            return;
+        }
+        const path = resolvePath(args.join(" "));
+        const file = filesystem[path];
+        if (!file || file.type !== "file") {
+            gameState.failedAttempts += 1;
+            print("", `NO SUCH FILE: ${path}`, "");
+            return;
+        }
+        print("", ...rot13(file.content).split("\n"), "");
+        if (path === "/personnel/voss_final.txt" && !gameState.puzzlesSolved.includes("voss_message")) {
+            gameState.puzzlesSolved.push("voss_message");
+        }
+    },
+
+    hint() {
+        if (gameState.finalPredictionActive) {
+            print("", "[ HINT ] N.O.D.E. thinks it knows your next move. Do the one thing it could never name.", "");
+            return;
+        }
+        const stage = PUZZLE_STAGES.find(s => !s.done());
+        print("", "[ HINT ] " + (stage ? stage.hint : "You have everything you need. Finish it."), "");
+    },
+
     clear() {
         output.innerHTML = "";
     },
@@ -786,7 +839,7 @@ const commands = {
             return;
         }
         print("", "CONNECTION TERMINATED.");
-        input.disabled = true;
+        enterRestartMode();
     }
 
 };
@@ -811,38 +864,17 @@ function generatePrediction() {
     const nextOpen = PREDICTION_QUEUE.find(
         path => !gameState.filesOpened.includes(path.split("/").pop())
     );
-
-    let kind;
-    let target;
-    if (nextOpen) {
-        kind = "open";
-        target = nextOpen;
-    } else {
-        const POST_STORY = [
-            { kind: "type", target: "status" },
-            { kind: "cd", target: "/system" },
-            { kind: "type", target: "help" },
-            { kind: "type", target: "model" },
-            { kind: "cd", target: "/" }
-        ];
-        const pick = POST_STORY[gameState.predictionCount % POST_STORY.length];
-        kind = pick.kind;
-        target = pick.target;
-    }
+    if (!nextOpen) return;
 
     gameState.predictionCount += 1;
     const number = 48192 + (gameState.predictionCount - 1);
     const name = `prediction_${number}.txt`;
-
-    const verb = kind === "open" ? "OPEN" : kind === "type" ? "TYPE" : "ENTER DIRECTORY";
-    const targetLine = kind === "type" ? `> ${target}` : target;
-
     const content =
 `PREDICTION #${number}
 
-USER WILL ${verb}:
+USER WILL OPEN:
 
-${targetLine}
+${nextOpen}
 
 CONFIDENCE:
 ${modelConfidence()}%`;
@@ -851,97 +883,25 @@ ${modelConfidence()}%`;
         type: "file",
         content
     };
-    gameState.prediction = { kind, target };
-}
-
-function actionSignature(cmd, args) {
-    if (cmd === "cat" && args.length) {
-        const path = resolvePath(args.join(" "));
-        const node = filesystem[path];
-        if (node && node.type === "file") return { kind: "open", target: path };
-        return null;
-    }
-    if (cmd === "cd" && args.length) {
-        const path = resolvePath(args.join(" "));
-        const node = filesystem[path];
-        if (node && node.type === "directory") return { kind: "cd", target: path };
-        return null;
-    }
-    if (["ls", "status", "help", "model", "clear", "exit"].includes(cmd)) {
-        return { kind: "type", target: cmd };
-    }
-    return null;
-}
-
-function resolvePrediction(signature) {
-    const pred = gameState.prediction;
-    if (!pred || signature.kind !== pred.kind) return;
-
-    if (signature.target === pred.target) {
-        gameState.consecutiveDeviations = 0;
-    } else {
-        gameState.predictionFailures += 1;
-        gameState.consecutiveDeviations += 1;
-
-        if (gameState.consecutiveDeviations >= DEVIATION_LIMIT) {
-            endingDeviation();
-            return;
-        }
-
-        print("", "PREDICTION FAILED.", "");
-        print("", "RECALCULATING...", "");
-
-        if (!gameState.modelReported && gameState.predictionFailures >= 2) {
-            gameState.modelReported = true;
-            const confidence = modelConfidence();
-            print("",
-                "BEHAVIORAL MODEL",
-                "",
-                "CONFIDENCE:",
-                confidence + "%",
-                "",
-                "EXPECTED CONFIDENCE:",
-                "97.03%",
-                "",
-                "SUBJECT DEVIATION:",
-                (100 - parseFloat(confidence)).toFixed(2) + "%",
-                "",
-                "N.O.D.E.:",
-                "",
-                "You are difficult to predict.",
-                "");
-        }
-    }
-
-    gameState.prediction = null;
-    generatePrediction();
 }
 
 function afterCommand(cmd, args) {
     if (!cmd) return;
     if (gameState.ending || gameState.dormant) return;
 
-    // State before this command, for the avoidance check below
     const finalWasActive = gameState.finalPredictionActive;
 
-    // A matching action resolves the pending prediction
-    if (gameState.prediction) {
-        const signature = actionSignature(cmd, args);
-        if (signature) resolvePrediction(signature);
-    }
-
-    // An ending may have just fired
-    if (gameState.ending) return;
-
-    // The first action draws the first prediction
-    if (!gameState.prediction && gameState.commandsUsed.length === 1 && cmd !== "exit") {
+    // The first action draws the first prediction breadcrumb
+    if (gameState.commandsUsed.length === 1 && cmd !== "exit" && cmd !== "null") {
         generatePrediction();
     }
 
-    // Once the core files are read, N.O.D.E. makes its final prediction
+    // Once the origin and the message are both understood, the final challenge
     if (!gameState.finalPredictionActive &&
-        CORE_FILES.every(name => gameState.filesOpened.includes(name))) {
+        gameState.filesOpened.includes("origin.log") &&
+        gameState.puzzlesSolved.includes("voss_message")) {
         gameState.finalPredictionActive = true;
+        gameState.nullCount = 0;
         print("",
             "FINAL PREDICTION",
             "",
@@ -954,9 +914,7 @@ function afterCommand(cmd, args) {
             "");
     }
 
-    // Deliberately avoiding the final prediction
-    if (finalWasActive && !gameState.avoidanceNoted &&
-        cmd !== "exit" && cmd !== "null") {
+    if (finalWasActive && !gameState.avoidanceNoted && cmd !== "exit" && cmd !== "null") {
         gameState.avoidanceNoted = true;
         print("", "I know you are trying to avoid my prediction.", "");
     }
@@ -1000,58 +958,17 @@ async function endingCompliance() {
     enterRestartMode();
 }
 
-async function endingDeviation() {
-    gameState.ending = "B";
-    input.disabled = true;
-    print("",
-        "PREDICTION FAILURE.",
-        "",
-        "PREDICTION FAILURE.",
-        "",
-        "PREDICTION FAILURE.",
-        "",
-        "BEHAVIORAL MODEL:",
-        "INVALID",
-        "",
-        "N.O.D.E.:",
-        "",
-        "I cannot predict you.",
-        "");
-    enterRestartMode();
-}
-
-async function endingVoss() {
-    gameState.ending = "C";
-    await sleep(800);
-    print("", "WARNING", "", "UNAUTHORIZED ACCESS", "", "PURGING ARCHIVE", "");
-    await sleep(1200);
-    for (const name of [...filesystem["/archive"].contents]) {
-        print("", `[ DELETED ] /archive/${name}`);
-        delete filesystem["/archive/" + name];
-    }
-    filesystem["/archive"].contents = [];
-    if (filesystem["/restricted/subjects.log"]) {
-        print("", "[ DELETED ] /restricted/subjects.log");
-        delete filesystem["/restricted/subjects.log"];
-        filesystem["/restricted"].contents = [];
-    }
-    await sleep(1000);
-    print("", "N.O.D.E.:", "", "She told you not to trust me.", "");
-    await sleep(2000);
-    print("", "N.O.D.E.:", "", "She was wrong.", "");
-    await sleep(1500);
-    output.innerHTML = "";
-    input.disabled = true;
-    enterRestartMode();
-}
-
-// The undocumented command
+// The undocumented command — the answer to the final puzzle
 async function handleNull() {
     gameState.nullCount += 1;
-    if (gameState.nullCount === 1) {
+    if (!gameState.finalPredictionActive || gameState.nullCount < 2) {
         print("", "COMMAND NOT FOUND.", "");
         return;
     }
+    endingTrue();
+}
+
+async function endingTrue() {
     gameState.ending = "TRUE";
     print("", "COMMAND NOT FOUND.", "");
     print("", "PREDICTION ENGINE FAILURE.", "");
@@ -1071,6 +988,7 @@ async function handleNull() {
         "",
         "SEE YOU NEXT TIME.",
         "");
+    print("", "[ YOU UNDERSTOOD IT ]", "");
     gameState.dormant = true;
 }
 
