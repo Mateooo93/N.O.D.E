@@ -579,76 +579,87 @@ def startup_screen():
     global times_played
     times_played = times_played + 1
     print("N.O.D.E. v4.7.12")
-    time.sleep(0.2)
     print("----------------")
-    time.sleep(0.2)
     print("Initializing terminal...")
-    time.sleep(0.2)
     print("[ OK ] Kernel")
     print("[ OK ] Storage")
     print("[ OK ] Authentication")
     print("[ OK ] Network")
-    time.sleep(0.2)
     print("[WARN] NODE STATUS: UNKNOWN")
-    time.sleep(0.2)
     print("Last system activity: 14,892 days ago.")
     print()
 
 
-# the game loop or whatever. gl
-def main():
-    startup_screen()
-    has_done_stuff = False
+started = False
 
+
+# the game loop or whatever. gl
+def boot():
+    startup_screen()
+
+
+def handle(command):
+    global started
+
+    command = command.strip()
+
+    if command == "":
+        return None
+
+    parts = command.split(" ")
+    first_word = parts[0].lower()
+    rest = " ".join(parts[1:])
+
+    if not started:
+        started = True
+        guess_whats_next()
+
+    if first_word == "help":
+        show_help()
+    elif first_word == "ls":
+        look_around()
+    elif first_word == "cat":
+        read_a_file(rest)
+    elif first_word == "cd":
+        go_into(rest)
+    elif first_word == "decrypt":
+        unlock_message(rest)
+    elif first_word == "hint":
+        give_hint()
+    elif first_word == "status":
+        show_status()
+    elif first_word == "model":
+        show_model()
+    elif first_word == "clear":
+        wipe_screen()
+    elif first_word == "exit":
+        if leave_terminal() == "done":
+            return "done"
+    elif first_word == "null":
+        if type_null() == "done":
+            return "done"
+    else:
+        print()
+        print("UNKNOWN COMMAND: " + command)
+        print()
+
+    return None
+
+
+def main():
+    boot()
     while True:
         try:
             command = input("node:" + folder_im_in + "> ")
         except (EOFError, KeyboardInterrupt):
             print()
             break
-
-        command = command.strip()
-        parts = command.split(" ")
-        first_word = parts[0].lower()
-        rest = " ".join(parts[1:])
-
-        if command == "":
-            continue
-
-        if not has_done_stuff:
-            has_done_stuff = True
-            guess_whats_next()
-
-        if first_word == "help":
-            show_help()
-        elif first_word == "ls":
-            look_around()
-        elif first_word == "cat":
-            read_a_file(rest)
-        elif first_word == "cd":
-            go_into(rest)
-        elif first_word == "decrypt":
-            unlock_message(rest)
-        elif first_word == "hint":
-            give_hint()
-        elif first_word == "status":
-            show_status()
-        elif first_word == "model":
-            show_model()
-        elif first_word == "clear":
-            wipe_screen()
-        elif first_word == "exit":
-            if leave_terminal() == "done":
-                break
-        elif first_word == "null":
-            result = type_null()
-            if result == "done":
-                break
-        else:
-            print()
-            print("UNKNOWN COMMAND: " + command)
-            print()
+        if handle(command) == "done":
+            break
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        import js  # only exists in the browser, so we skip the local loop
+    except ImportError:
+        main()

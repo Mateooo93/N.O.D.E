@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Terminal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="terminal">
+        <div id="output"></div>
+        <div id="input-line">
+            <span id="prompt">&gt;</span>
+            <input id="command" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" disabled>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+    <script>
+        (async function () {
+            const terminal = document.getElementById('terminal');
+            const output = document.getElementById('output');
+            const input = document.getElementById('command');
+            const prompt = document.getElementById('prompt');
+
+            function addOutput(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                output.appendChild(div);
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            try {
+                const pyodide = await loadPyodide();
+                pyodide.globals.set('js_add_output', addOutput);
+                await pyodide.runPythonAsync([
+                    "import builtins",
+                    "def _print(*args, **kwargs):",
+                    "    sep = kwargs.get('sep', ' ')",
+                    "    end = kwargs.get('end', '\\n')",
+                    "    js_add_output(sep.join(str(a) for a in args))",
+                    "builtins.print = _print"
+                ].join('\n'));
+
+                const source = await (await fetch('game.py')).text();
+                await pyodide.runPythonAsync(source);
+
+                const handle = pyodide.globals.get('handle');
+                const updatePrompt = function () {
+                    prompt.textContent = 'node:' + pyodide.globals.get('folder_im_in') + '>';
+                };
+
+                pyodide.globals.get('boot')();
+                updatePrompt();
+                input.disabled = false;
+                input.focus();
+
+                terminal.addEventListener('click', function () {
+                    if (!input.disabled) input.focus();
+                });
+
+                input.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    if (input.disabled) return;
+                    const command = input.value;
+                    addOutput('node:' + pyodide.globals.get('folder_im_in') + '> ' + command);
+                    input.value = '';
+                    const result = handle(command);
+                    updatePrompt();
+                    if (result === 'done') {
+                        input.disabled = true;
+                    }
+                });
+            } catch (err) {
+                addOutput('the terminal failed to boot: ' + err.message);
+                input.disabled = true;
+            }
+        })();
+    </script>
+</body>
+</html>
