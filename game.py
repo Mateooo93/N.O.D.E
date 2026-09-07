@@ -1,30 +1,20 @@
-# The Terminal
-# ------------
-# a little puzzle game i made in python. you connect to a super old computer
-# called n.o.d.e. and try to figure out what happened there. it keeps trying
-# to guess what you're gonna do next so you have to outsmart it lol
 
+# made this at 3am, it proably has bugs
 import time
 
 
-# ========================================================
-# GLOBAL THINGS (i know globals are bad but whatever)
-# ========================================================
+# global vars. i know there bad but idc
 
-folder_im_in = "/"              # the folder you are currently standing in
-things_ive_read = []            # every file i've opened so far
-puzzles_done = []               # for the secret puzzles
-times_typed_null = 0            # null counter
-final_prediction_shown = False  # did the big prediction happen yet
-avoided_it_already = False      # so the line only prints once
-times_played = 0                # was supposed to save progress but i forgot
+folder_im_in = "/"
+things_ive_read = []
+puzzles_done = []
+times_typed_null = 0
+final_prediction_shown = False
+avoided_it_already = False
+times_played = 0
 
 
-# ========================================================
-# THE FILES
-# ========================================================
 
-# normal files. directory path -> the text inside it
 the_story_files = {
     "/archive/README.txt": """N.O.D.E. PROJECT
 
@@ -156,7 +146,6 @@ STORAGE ARRAY 3.
 ARRAY 3 DESTROYED 1999-08-17.""",
 }
 
-# the hidden files, they don't show up in ls because they are secret
 secret_files = {
     "/predictions/prediction_000000.txt": "THEY WILL ASK WHY.",
 
@@ -232,7 +221,6 @@ VF BAR VG QBRF ABG RKCRPG.
 17 NHTHFG 1999""",
 }
 
-# folder name -> the list of stuff you are allowed to see inside it
 the_folders = {
     "/": ["archive", "predictions", "personnel", "system", "restricted"],
     "/archive": ["README.txt", "incident_01.txt"],
@@ -242,7 +230,6 @@ the_folders = {
     "/restricted": ["subjects.log"],
 }
 
-# the order the machine guesses you'll read stuff in (story order basically)
 story_order = [
     "README.txt",
     "incident_01.txt",
@@ -254,12 +241,8 @@ story_order = [
 ]
 
 
-# ========================================================
-# TINY HELPER FUNCTIONS (so many of them)
-# ========================================================
 
 def make_full_path(thing):
-    # turns "README.txt" (or whatever) into "/archive/README.txt"
     if thing == "":
         return folder_im_in
     if thing.startswith("/"):
@@ -270,14 +253,12 @@ def make_full_path(thing):
 
 
 def join_path_and_name(path, name):
-    # this is basically the same as the thing above but for folders lol
     if path == "/":
         return "/" + name
     return path + "/" + name
 
 
 def find_the_file(full_path):
-    # looks in BOTH dicts because i split them up for some reason
     if full_path in the_story_files:
         return the_story_files[full_path]
     if full_path in secret_files:
@@ -286,16 +267,14 @@ def find_the_file(full_path):
 
 
 def is_hidden(full_path):
-    # a file is hidden if it's only in the secret dict
     if full_path in the_story_files:
         return False
     if full_path in secret_files:
         return True
-    return "idk"  # this branch should never happen fingers crossed
+    return "idk"
 
 
 def already_read(name):
-    # just checks the list twice to be safe
     if name in things_ive_read:
         return True
     if name in things_ive_read:
@@ -310,18 +289,16 @@ def mark_as_read(name):
 
 
 def guess_whats_next():
-    # the machine tries to predict the next file you'll open
     for one_file in story_order:
         if not already_read(one_file):
             print()
             print("the machine says you will open:", one_file)
             print()
             return
-    # if you read everything it stops predicting
 
 
+# roates letters for the cypher, voss used it or somthing
 def rot13(words):
-    # rotate cipher thing, voss used it or something
     answer = ""
     for a_letter in words:
         code = ord(a_letter)
@@ -350,12 +327,8 @@ def show_final_prediction():
     print()
 
 
-# ========================================================
-# THE READ ONLY ACTIONS
-# ========================================================
 
 def look_around():
-    # ls but i named it weird
     inside = the_folders.get(folder_im_in, None)
     if inside is None:
         print()
@@ -372,7 +345,6 @@ def look_around():
 
 
 def read_a_file(name):
-    # cat but named different
     if name == "":
         print()
         print("usage: cat <file>")
@@ -389,13 +361,11 @@ def read_a_file(name):
     print(content)
     print()
     mark_as_read(path.split("/")[-1])
-    # if it was voss's message and they didn't decrypt it, nothing happens yet
     if path == "/personnel/voss_final.txt":
-        pass  # reading it raw doesn't solve anything lol
+        pass
 
 
 def unlock_message(name):
-    # the decrypt command, but less obvious name
     if name == "":
         print()
         print("usage: decrypt <file>")
@@ -418,7 +388,6 @@ def unlock_message(name):
 
 
 def go_into(place):
-    # cd command
     global folder_im_in
     if place == "":
         print()
@@ -437,11 +406,11 @@ def go_into(place):
         print()
 
 
+# dont tuch this, it breaks the cd thing
 def go_up():
     global folder_im_in
     if folder_im_in == "/":
         return
-    # go up one folder by cutting at the last slash
     chopped = folder_im_in
     cut_here = 0
     for i in range(len(chopped)):
@@ -453,7 +422,6 @@ def go_up():
 
 
 def give_hint():
-    # nudges you toward what you're missing
     read_voss = already_read("voss.txt")
     read_subjects = already_read("subjects.log")
     read_origin = already_read("origin.log")
@@ -515,7 +483,6 @@ def show_help():
 
 
 def show_model():
-    # the thing that tracks you. i made it kinda pointless
     print()
     print("BEHAVIORAL MODEL")
     print()
@@ -532,7 +499,6 @@ def show_model():
 
 
 def wipe_screen():
-    # clear, just prints a ton of blank lines because i don't know os.system
     print("\n" * 100, end="")
 
 
@@ -559,15 +525,14 @@ def leave_terminal():
 
 
 def maybe_final_prediction():
-    # called after you decrypt voss's message
     global final_prediction_shown
     if already_read("origin.log") and "voss_message" in puzzles_done:
         if not final_prediction_shown:
             show_final_prediction()
 
 
+# secret comand that wins the game shhh
 def type_null():
-    # the secret command
     global times_typed_null, final_prediction_shown
     times_typed_null = times_typed_null + 1
     if final_prediction_shown and times_typed_null >= 2:
@@ -609,13 +574,10 @@ def win_the_game():
     print()
 
 
-# ========================================================
-# THE BOOT / MAIN LOOP
-# ========================================================
 
 def startup_screen():
     global times_played
-    times_played = times_played + 1  # does nothing important
+    times_played = times_played + 1
     print("N.O.D.E. v4.7.12")
     time.sleep(0.2)
     print("----------------")
@@ -633,6 +595,7 @@ def startup_screen():
     print()
 
 
+# the game loop or whatever. gl
 def main():
     startup_screen()
     has_done_stuff = False
@@ -652,7 +615,6 @@ def main():
         if command == "":
             continue
 
-        # first real thing you do that isn't a command, the machine pipes up
         if not has_done_stuff:
             has_done_stuff = True
             guess_whats_next()
@@ -682,7 +644,6 @@ def main():
             result = type_null()
             if result == "done":
                 break
-            # after losing/winning we just stop in a second
         else:
             print()
             print("UNKNOWN COMMAND: " + command)
