@@ -6,7 +6,7 @@ you win by figuring the whole thing out. if you just do what the machine expects
 
 ## how to play
 
-open index.html in a browser, or play here:
+open the landing page (index.html) and click connect, or play the terminal directly in play.html, or play here:
 
 https://mateooo93.github.io/N.O.D.E/
 

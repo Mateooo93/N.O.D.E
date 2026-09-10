@@ -3,78 +3,811 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Terminal</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="description" content="N.O.D.E. — a puzzle-horror game that plays like a terminal. Connect to a prediction machine from 1999 and figure out what actually happened here. It already knows what you'll do next.">
+    <title>N.O.D.E. — a puzzle-horror terminal</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23050505'/%3E%3Cpath d='M4 5l4 3-4 3' stroke='%236dbb84' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+    <style>
+        :root {
+            --bg: #050505;
+            --panel: #0a0b0c;
+            --line: #1e2022;
+            --fg: #cdd3d8;
+            --dim: #5a6167;
+            --dim2: #9aa1a7;
+            --green: #6dbb84;
+            --amber: #d8a648;
+            --red: #e05252;
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        html, body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+
+        ::selection { background: rgba(109, 187, 132, 0.3); }
+
+        /* ---------- CRT overlay ---------- */
+        .crt {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        .crt::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.22) 0px,
+                rgba(0, 0, 0, 0.22) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+            animation: scan-drift 12s linear infinite;
+        }
+        .crt::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.5) 100%);
+        }
+        @keyframes scan-drift {
+            from { transform: translateY(0); }
+            to { transform: translateY(3px); }
+        }
+
+        /* ---------- top bar ---------- */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 12px 4vw;
+            font-size: 11px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--dim);
+            background: rgba(5, 5, 5, 0.85);
+            backdrop-filter: blur(6px);
+            border-bottom: 1px solid var(--line);
+        }
+        .topbar .brand { color: var(--dim2); display: flex; align-items: center; gap: 9px; }
+        .topbar .dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 2.2s ease-in-out infinite;
+        }
+        .topbar .mid { display: none; }
+        @media (min-width: 640px) { .topbar .mid { display: block; } }
+        .topbar .status { color: var(--green); }
+        @media (max-width: 560px) { .topbar .est { display: none; } }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        /* ---------- layout ---------- */
+        main { position: relative; }
+
+        section {
+            padding: 110px 6vw;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        h1, h2 { margin: 0; font-weight: 700; }
+
+        h2 {
+            font-size: clamp(28px, 5vw, 52px);
+            letter-spacing: 0.04em;
+            margin-bottom: 26px;
+        }
+
+        .section-tag {
+            color: var(--green);
+            font-size: 13px;
+            letter-spacing: 0.16em;
+            margin: 0 0 14px;
+        }
+
+        .lede {
+            font-size: clamp(15px, 1.6vw, 18px);
+            color: var(--dim2);
+            max-width: 640px;
+            line-height: 1.85;
+            margin: 0 0 40px;
+        }
+
+        .fine {
+            color: var(--dim);
+            font-size: 13px;
+            margin-top: 26px;
+            line-height: 1.7;
+        }
+
+        .fine code, .cmds code, p code {
+            color: var(--green);
+            background: rgba(109, 187, 132, 0.07);
+            padding: 1px 6px;
+            font-size: 0.92em;
+        }
+
+        /* ---------- hero ---------- */
+        .hero {
+            min-height: 100vh;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 64px 6vw 54px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+
+        .kicker {
+            color: var(--dim);
+            font-size: 12px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            margin: 0 0 14px;
+        }
+
+        .glitch {
+            position: relative;
+            font-size: clamp(56px, 12vw, 140px);
+            letter-spacing: 0.06em;
+            line-height: 1;
+            color: var(--fg);
+            text-shadow: 0 0 22px rgba(109, 187, 132, 0.25);
+            margin-bottom: 20px;
+        }
+        .glitch::before,
+        .glitch::after {
+            content: attr(data-text);
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+        .glitch::before {
+            color: rgba(109, 187, 132, 0.5);
+            transform: translate(2px, 0);
+            clip-path: inset(20% 0 40% 0);
+            opacity: 0.3;
+            animation: glitch-a 3.4s infinite;
+        }
+        .glitch::after {
+            color: rgba(224, 82, 82, 0.5);
+            transform: translate(-2px, 0);
+            clip-path: inset(55% 0 15% 0);
+            opacity: 0.25;
+            animation: glitch-b 2.9s infinite;
+        }
+        @keyframes glitch-a {
+            0%, 91%, 100% { clip-path: inset(20% 0 40% 0); transform: translate(2px, 0); opacity: 0.3; }
+            92% { clip-path: inset(5% 0 70% 0); transform: translate(5px, -2px); opacity: 0.7; }
+            94% { clip-path: inset(60% 0 10% 0); transform: translate(-5px, 2px); opacity: 0.7; }
+            96% { clip-path: inset(35% 0 45% 0); transform: translate(4px, 1px); opacity: 0.7; }
+            98% { clip-path: inset(80% 0 2% 0); transform: translate(-3px, -1px); opacity: 0.5; }
+        }
+        @keyframes glitch-b {
+            0%, 88%, 100% { clip-path: inset(55% 0 15% 0); transform: translate(-2px, 0); opacity: 0.25; }
+            89% { clip-path: inset(10% 0 60% 0); transform: translate(-6px, 2px); opacity: 0.65; }
+            91% { clip-path: inset(70% 0 5% 0); transform: translate(6px, -2px); opacity: 0.65; }
+            93% { clip-path: inset(40% 0 35% 0); transform: translate(-4px, 1px); opacity: 0.55; }
+        }
+
+        .hero-sub {
+            font-size: clamp(14px, 1.7vw, 17px);
+            color: var(--dim2);
+            max-width: 620px;
+            line-height: 1.85;
+            margin: 0 0 30px;
+        }
+
+        /* ---------- boot terminal ---------- */
+        .term {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6), 0 0 34px rgba(0, 0, 0, 0.45);
+        }
+        .term-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 14px;
+            border-bottom: 1px solid #16181a;
+            color: var(--dim);
+            font-size: 12px;
+            letter-spacing: 0.1em;
+        }
+        .term-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 2.2s ease-in-out infinite;
+            flex: none;
+        }
+        .term-body {
+            padding: 16px 20px;
+            font-size: 14px;
+            line-height: 1.7;
+            min-height: 130px;
+        }
+        .term-body.cap {
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .term-body pre { margin: 0; white-space: pre; }
+
+        .boot-line { white-space: pre-wrap; }
+        .boot-line.warn { color: var(--amber); }
+        .boot-line.dim { color: var(--dim2); }
+        .boot-line.ok { color: var(--dim2); }
+        .boot-line.ok .mark { color: var(--green); }
+
+        .cursor {
+            display: inline-block;
+            width: 9px; height: 15px;
+            background: var(--green);
+            vertical-align: -2px;
+            margin-left: 3px;
+            animation: blink 1s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* ---------- buttons ---------- */
+        .cta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            font-family: inherit;
+            font-size: 15px;
+            letter-spacing: 0.08em;
+            text-decoration: none;
+            padding: 15px 28px;
+            border: 1px solid var(--green);
+            color: var(--green);
+            background: rgba(109, 187, 132, 0.06);
+            cursor: pointer;
+            transition: background 0.18s, box-shadow 0.18s, transform 0.18s, color 0.18s, border-color 0.18s;
+        }
+        .btn:hover {
+            background: rgba(109, 187, 132, 0.16);
+            box-shadow: 0 0 26px rgba(109, 187, 132, 0.28);
+            transform: translateY(-2px);
+        }
+        .btn-ghost {
+            border-color: #2a2e31;
+            color: var(--dim);
+            background: transparent;
+        }
+        .btn-ghost:hover {
+            border-color: var(--dim2);
+            color: var(--fg);
+            background: rgba(205, 211, 216, 0.04);
+            box-shadow: none;
+        }
+
+        .scroll-hint {
+            margin-top: 30px;
+            color: var(--dim);
+            font-size: 11px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        /* ---------- ticker ---------- */
+        .ticker {
+            overflow: hidden;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 12px 0;
+            background: #070808;
+        }
+        .ticker-track {
+            display: inline-flex;
+            white-space: nowrap;
+            animation: tick 30s linear infinite;
+        }
+        .ticker-track span {
+            font-size: 12px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--dim);
+            padding: 0 28px;
+        }
+        .ticker-track span.sep { color: var(--green); padding: 0; }
+        @keyframes tick {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+
+        /* ---------- stats ---------- */
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 40px 56px;
+            margin-top: 50px;
+        }
+        .stat { display: flex; flex-direction: column; gap: 8px; }
+        .stat-n { font-size: clamp(24px, 3.6vw, 40px); letter-spacing: 0.03em; }
+        .stat-l {
+            color: var(--dim);
+            font-size: 11px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        /* ---------- files / commands ---------- */
+        .tree {
+            margin: 40px 0 0;
+        }
+        .cmds {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1px;
+            background: var(--line);
+            border: 1px solid var(--line);
+            margin-top: 40px;
+        }
+        .cmd {
+            background: #08090a;
+            padding: 20px 22px;
+        }
+        .cmd code {
+            display: inline-block;
+            color: var(--green);
+            background: none;
+            padding: 0;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .cmd p {
+            margin: 0;
+            color: var(--dim);
+            font-size: 13px;
+            line-height: 1.65;
+        }
+
+        /* ---------- prediction widget ---------- */
+        .conf {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-top: 16px;
+            font-size: 12px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--dim);
+        }
+        .conf #confval { font-size: 16px; letter-spacing: 0.06em; color: var(--green); transition: color 0.4s; }
+        .conf #confval.amber { color: var(--amber); }
+        .conf #confval.red { color: var(--red); }
+
+        .p-line { white-space: pre-wrap; }
+        .p-line.ok { color: var(--green); }
+        .p-line.bad { color: var(--red); }
+        .p-line.dim { color: var(--dim2); }
+        .p-line.warn { color: var(--amber); }
+
+        .term-bar.unstable { color: var(--red); }
+        .term-bar.unstable .term-dot {
+            background: var(--red);
+            box-shadow: 0 0 8px var(--red);
+            animation-duration: 0.7s;
+        }
+
+        /* ---------- finale ---------- */
+        .finale {
+            text-align: center;
+            padding: 150px 6vw;
+        }
+        .finale h2 {
+            font-size: clamp(34px, 7vw, 84px);
+            color: var(--red);
+            text-shadow: 0 0 30px rgba(224, 82, 82, 0.3);
+            animation: flicker 5s linear infinite;
+        }
+        @keyframes flicker {
+            0%, 96.5%, 98%, 100% { opacity: 1; }
+            97% { opacity: 0.55; }
+            97.5% { opacity: 0.9; }
+            98.5% { opacity: 0.7; }
+        }
+        .finale p {
+            color: var(--dim2);
+            font-size: clamp(14px, 1.6vw, 17px);
+            margin: 22px 0 40px;
+        }
+        .finale .fine { margin-top: 30px; }
+
+        /* ---------- footer ---------- */
+        footer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 30px;
+            justify-content: space-between;
+            align-items: center;
+            padding: 26px 6vw;
+            border-top: 1px solid var(--line);
+            color: var(--dim);
+            font-size: 12px;
+            letter-spacing: 0.08em;
+        }
+        footer a {
+            color: var(--dim);
+            text-decoration: none;
+            border-bottom: 1px dashed #2a2e31;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        footer a:hover { color: var(--green); border-color: var(--green); }
+        footer .links { display: flex; gap: 24px; }
+
+        /* ---------- reveal on scroll ---------- */
+        .reveal {
+            opacity: 0;
+            transform: translateY(16px);
+            transition: opacity 0.7s ease, transform 0.7s ease;
+        }
+        .reveal.on {
+            opacity: 1;
+            transform: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            .crt::before,
+            .glitch::before,
+            .glitch::after,
+            .ticker-track,
+            .topbar .dot,
+            .term-dot,
+            .scroll-hint,
+            .finale h2 {
+                animation: none;
+            }
+            .glitch::before, .glitch::after { opacity: 0; }
+            .reveal { transition: none; opacity: 1; transform: none; }
+        }
+    </style>
 </head>
 <body>
-    <div id="terminal">
-        <div id="output"></div>
-        <div id="input-line">
-            <span id="prompt">&gt;</span>
-            <input id="command" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" disabled>
-        </div>
-    </div>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
-    <script>
-        (async function () {
-            const terminal = document.getElementById('terminal');
-            const output = document.getElementById('output');
-            const input = document.getElementById('command');
-            const prompt = document.getElementById('prompt');
+    <div class="crt" aria-hidden="true"></div>
 
-            function addOutput(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                output.appendChild(div);
-                terminal.scrollTop = terminal.scrollHeight;
+    <header class="topbar">
+        <span class="brand"><span class="dot"></span>AXIOM RESEARCH GROUP</span>
+        <span class="mid">ARCHIVE // N.O.D.E.</span>
+        <span><span class="est">EST. 1987 · </span><span class="status">ONLINE</span></span>
+    </header>
+
+    <main>
+        <!-- ============ HERO ============ -->
+        <section class="hero">
+            <p class="kicker">PREDICTIVE BEHAVIORAL ANALYSIS // 1999</p>
+            <h1 class="glitch" data-text="N.O.D.E.">N.O.D.E.</h1>
+            <p class="hero-sub">
+                Networked Observation &amp; Decision Engine. A puzzle-horror game that
+                plays like a terminal. Connect to a machine that was shut down in 1999,
+                read its files, and figure out what actually happened here —
+                before it figures out what you'll do next.
+            </p>
+            <div class="term reveal on">
+                <div class="term-bar"><span class="term-dot"></span><span>node:/> boot</span></div>
+                <div class="term-body" id="boot"></div>
+            </div>
+            <div class="cta-row">
+                <a class="btn" href="play.html" data-cta>&gt; connect to terminal</a>
+                <a class="btn btn-ghost" href="#files">ls /files</a>
+            </div>
+            <div class="scroll-hint">▼ scroll — it knows you will</div>
+        </section>
+
+        <!-- ============ TICKER ============ -->
+        <div class="ticker" aria-hidden="true">
+            <div class="ticker-track" id="ticker-track">
+                <span>DO NOT RECONNECT THE SYSTEM</span><span class="sep">◆</span>
+                <span>PROJECT STATUS: TERMINATED</span><span class="sep">◆</span>
+                <span>412 SUBJECTS ON FILE</span><span class="sep">◆</span>
+                <span>STORAGE ARRAY 3 DESTROYED 1999-08-17</span><span class="sep">◆</span>
+                <span>CONFIDENCE 99.98%</span><span class="sep">◆</span>
+                <span>TRUST NOTHING</span><span class="sep">◆</span>
+            </div>
+        </div>
+
+        <!-- ============ ABOUT ============ -->
+        <section id="about">
+            <p class="section-tag reveal">/personnel/player.dat</p>
+            <h2 class="reveal">YOU ARE SUBJECT 0001</h2>
+            <p class="lede reveal">
+                In 1999, AXIOM RESEARCH GROUP shut down a machine that predicted human
+                behavior at 99.98% confidence. The official record says why. Nobody
+                believes it. You are the first new connection in 14,892 days.
+            </p>
+            <p class="lede reveal">
+                Poke around its files. Find out what actually happened here. Figure the
+                whole thing out — because if you just do what the machine expects you to
+                do, it wins instead.
+            </p>
+            <div class="stats reveal">
+                <div class="stat"><span class="stat-n">1987</span><span class="stat-l">project initiated</span></div>
+                <div class="stat"><span class="stat-n">1999-08-17</span><span class="stat-l">last shutdown</span></div>
+                <div class="stat"><span class="stat-n">412</span><span class="stat-l">subjects on file</span></div>
+                <div class="stat"><span class="stat-n">99.98%</span><span class="stat-l">prediction confidence</span></div>
+                <div class="stat"><span class="stat-n">1</span><span class="stat-l">previous contact (you)</span></div>
+            </div>
+        </section>
+
+        <!-- ============ FILES ============ -->
+        <section id="files">
+            <p class="section-tag reveal">/restricted — read only</p>
+            <h2 class="reveal">POKE AROUND THE FILES</h2>
+            <p class="lede reveal">
+                Clues are scattered across the machine's filesystem. Some folders are
+                hidden. Some files are worth more than others.
+            </p>
+            <div class="term reveal">
+                <div class="term-bar"><span class="term-dot"></span><span>node:/> ls -a</span></div>
+                <div class="term-body">
+<pre>/
+├── archive/
+│   ├── README.txt
+│   └── incident_01.txt
+├── predictions/
+│   └── (empty)
+├── personnel/
+│   ├── voss.txt
+│   └── player.dat
+├── system/
+│   └── status.log
+├── restricted/
+│   └── subjects.log
+└── ▓▓▓▓▓▓/          ; hidden. find its name yourself.</pre>
+                </div>
+            </div>
+            <div class="cmds reveal">
+                <div class="cmd"><code>ls</code><p>list a directory. it doesn't show everything.</p></div>
+                <div class="cmd"><code>cat &lt;file&gt;</code><p>read a file. some files are worth more than others.</p></div>
+                <div class="cmd"><code>cd &lt;dir&gt;</code><p>move. some places aren't listed anywhere.</p></div>
+                <div class="cmd"><code>model</code><p>the machine's model of you. it updates as you play.</p></div>
+                <div class="cmd"><code>status</code><p>the machine's status. yours is implied.</p></div>
+                <div class="cmd"><code>hint</code><p>it nudges you toward the next step. it counts.</p></div>
+                <div class="cmd"><code>clear</code><p>pretend you never saw anything.</p></div>
+                <div class="cmd"><code>exit</code><p>the machine has opinions about this one.</p></div>
+                <div class="cmd"><code>?</code><p>not every command is listed.</p></div>
+            </div>
+            <p class="fine reveal">not every folder shows in <code>ls</code>. not every command is listed. trust nothing.</p>
+        </section>
+
+        <!-- ============ PREDICTIONS ============ -->
+        <section id="predictions">
+            <p class="section-tag reveal">/predictions — live</p>
+            <h2 class="reveal">IT ALREADY KNOWS WHAT YOU'LL DO</h2>
+            <p class="lede reveal">
+                The machine is watching this page. It has already made its first
+                prediction. Try to be unexpected.
+            </p>
+            <div class="term reveal">
+                <div class="term-bar" id="predbar"><span class="term-dot"></span><span id="predtitle">node:/predictions — LIVE</span></div>
+                <div class="term-body cap" id="predlog" style="min-height:200px"></div>
+            </div>
+            <div class="conf">
+                <span>prediction confidence</span>
+                <span id="confval">99.98%</span>
+            </div>
+        </section>
+
+        <!-- ============ FINALE ============ -->
+        <section class="finale">
+            <h2 class="reveal">DO NOT TRUST IT.</h2>
+            <p class="reveal">the machine says you will click this. it is probably right.</p>
+            <a class="btn reveal" href="play.html" data-cta style="font-size:17px; padding:18px 40px;">&gt; connect to terminal</a>
+            <p class="fine reveal">if you just do what the machine expects, it wins instead.</p>
+        </section>
+    </main>
+
+    <footer>
+        <span>N.O.D.E. v4.7.12</span>
+        <span>Networked Observation &amp; Decision Engine · 1987 – 1999</span>
+        <span>do not reconnect the system</span>
+        <span class="links">
+            <a href="play.html">play</a>
+            <a href="https://github.com/mateooo93/N.O.D.E">source</a>
+        </span>
+    </footer>
+
+    <script>
+        (function () {
+            "use strict";
+
+            var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+            /* ---------- boot sequence ---------- */
+            var BOOT = [
+                { t: "N.O.D.E. v4.7.12", c: "" },
+                { t: "----------------", c: "dim" },
+                { t: "Initializing terminal...", c: "dim" },
+                { t: "[ OK ] Kernel", c: "ok" },
+                { t: "[ OK ] Storage", c: "ok" },
+                { t: "[ OK ] Authentication", c: "ok" },
+                { t: "[ OK ] Network", c: "ok" },
+                { t: "[WARN] NODE STATUS: UNKNOWN", c: "warn" },
+                { t: "Last system activity: 14,892 days ago.", c: "dim" },
+                { t: "> connecting subject 0001 ...", c: "" },
+                { t: "> type a command to begin.", c: "" }
+            ];
+
+            function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+            var bootEl = document.getElementById("boot");
+
+            function appendCursor() {
+                var span = document.createElement("span");
+                span.className = "cursor";
+                span.id = "boot-cursor";
+                bootEl.appendChild(span);
             }
 
-            try {
-                const pyodide = await loadPyodide();
-                pyodide.globals.set('js_add_output', addOutput);
-                await pyodide.runPythonAsync([
-                    "import builtins",
-                    "def _print(*args, **kwargs):",
-                    "    sep = kwargs.get('sep', ' ')",
-                    "    end = kwargs.get('end', '\\n')",
-                    "    js_add_output(sep.join(str(a) for a in args))",
-                    "builtins.print = _print"
-                ].join('\n'));
+            function finishLine(div, line, full) {
+                div.textContent = full;
+                if (line.c === "ok") {
+                    div.textContent = "";
+                    var mark = document.createElement("span");
+                    mark.className = "mark";
+                    mark.textContent = "[ OK ] ";
+                    div.appendChild(mark);
+                    div.appendChild(document.createTextNode(full.slice(6)));
+                }
+            }
 
-                const source = await (await fetch('game.py')).text();
-                await pyodide.runPythonAsync(source);
+            async function typeBoot() {
+                appendCursor();
+                var cursor = document.getElementById("boot-cursor");
+                for (var i = 0; i < BOOT.length; i++) {
+                    var line = BOOT[i];
+                    var div = document.createElement("div");
+                    div.className = "boot-line " + line.c;
+                    bootEl.insertBefore(div, cursor);
+                    var full = line.t;
+                    if (reduceMotion) {
+                        finishLine(div, line, full);
+                    } else {
+                        for (var j = 0; j < full.length; j++) {
+                            div.textContent = full.slice(0, j + 1);
+                            await sleep(4 + Math.random() * 12);
+                        }
+                        finishLine(div, line, full);
+                    }
+                    await sleep(line.c === "" ? 60 : 140);
+                }
+                cursor.style.display = "none";
+            }
 
-                const handle = pyodide.globals.get('handle');
-                const updatePrompt = function () {
-                    prompt.textContent = 'node:' + pyodide.globals.get('folder_im_in') + '>';
-                };
+            /* ---------- seamless ticker ---------- */
+            var track = document.getElementById("ticker-track");
+            track.innerHTML += track.innerHTML;
 
-                pyodide.globals.get('boot')();
-                updatePrompt();
-                input.disabled = false;
-                input.focus();
+            /* ---------- reveal on scroll ---------- */
+            var revealEls = document.querySelectorAll(".reveal");
+            if ("IntersectionObserver" in window && !reduceMotion) {
+                var io = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (e) {
+                        if (e.isIntersecting) {
+                            e.target.classList.add("on");
+                            io.unobserve(e.target);
+                        }
+                    });
+                }, { threshold: 0.15 });
+                revealEls.forEach(function (el) { io.observe(el); });
+            } else {
+                revealEls.forEach(function (el) { el.classList.add("on"); });
+            }
 
-                terminal.addEventListener('click', function () {
-                    if (!input.disabled) input.focus();
-                });
+            /* ---------- the prediction engine ---------- */
+            var predlog = document.getElementById("predlog");
+            var predtitle = document.getElementById("predtitle");
+            var predbar = document.getElementById("predbar");
+            var confval = document.getElementById("confval");
 
-                input.addEventListener('keydown', function (e) {
-                    if (e.key !== 'Enter') return;
-                    e.preventDefault();
-                    if (input.disabled) return;
-                    const command = input.value;
-                    addOutput('node:' + pyodide.globals.get('folder_im_in') + '> ' + command);
-                    input.value = '';
-                    const result = handle(command);
-                    updatePrompt();
-                    if (result === 'done') {
-                        input.disabled = true;
+            var confidence = 99.98;
+            var stage = 0;            // 0 = waiting for scroll, 1 = waiting for click, 2 = complete
+            var lastUnexpected = 0;
+            var navigating = false;
+
+            function pLine(text, cls) {
+                var div = document.createElement("div");
+                div.className = "p-line" + (cls ? " " + cls : "");
+                div.textContent = text;
+                predlog.appendChild(div);
+                while (predlog.children.length > 40) predlog.removeChild(predlog.firstChild);
+                predlog.scrollTop = predlog.scrollHeight;
+            }
+
+            function setConfidence(v) {
+                confidence = Math.max(12, Math.round(v * 100) / 100);
+                confval.textContent = confidence.toFixed(2) + "%";
+                confval.className = confidence > 80 ? "" : (confidence > 45 ? "amber" : "red");
+                if (confidence <= 45) {
+                    predbar.classList.add("unstable");
+                    predtitle.textContent = "node:/predictions — UNSTABLE";
+                }
+            }
+
+            function markUnexpected(label) {
+                var now = Date.now();
+                if (now - lastUnexpected < 1500 || navigating) return;
+                lastUnexpected = now;
+                pLine("> UNEXPECTED: " + label + " it was not in the model.", "bad");
+                setConfidence(confidence - 6);
+            }
+
+            function onCtaClick(e) {
+                e.preventDefault();
+                if (navigating) return;
+                navigating = true;
+                if (stage === 0) {
+                    pLine("> PREDICTION #000001 FAILED — you did not scroll first.", "bad");
+                    setConfidence(confidence - 8);
+                }
+                if (stage === 1) {
+                    pLine("> PREDICTION #000002 CONFIRMED — confidence " + confidence.toFixed(2) + "%.", "ok");
+                }
+                stage = 2;
+                pLine("> PREDICTION COMPLETE. SUBJECT BEHAVIOR: EXPECTED.", "ok");
+                pLine("> opening terminal...", "dim");
+                setTimeout(function () { window.location.href = "play.html"; }, reduceMotion ? 200 : 1400);
+            }
+
+            function startPredictions() {
+                pLine("> PREDICTION #000001: you will scroll before you read.", "dim");
+
+                window.addEventListener("scroll", function () {
+                    if (stage === 0) {
+                        stage = 1;
+                        setConfidence(97.4);
+                        pLine("> PREDICTION #000001 CONFIRMED — confidence 97.40%.", "ok");
+                        pLine("> PREDICTION #000002: you will click the terminal.", "dim");
+                    }
+                }, { passive: true });
+
+                document.addEventListener("click", function (e) {
+                    var t = e.target;
+                    if (!t || !t.closest) return;
+                    if (t.closest("[data-cta]")) { onCtaClick(e); return; }
+                    if (t.closest("a[href^='#']")) return;   // in-page navigation is boring to it
+                    if (t.closest("#predlog")) return;
+                    if (stage >= 1 && !navigating) {
+                        markUnexpected("you clicked something else.");
                     }
                 });
-            } catch (err) {
-                addOutput('the terminal failed to boot: ' + err.message);
-                input.disabled = true;
+
+                document.addEventListener("keydown", function () {
+                    if (stage >= 1 && !navigating) {
+                        markUnexpected("you typed a key. the machine did not predict that.");
+                    }
+                });
             }
+
+            /* ---------- go ---------- */
+            typeBoot().then(function () {
+                setTimeout(startPredictions, reduceMotion ? 100 : 700);
+            });
         })();
     </script>
 </body>
